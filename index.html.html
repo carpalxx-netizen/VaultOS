@@ -1,0 +1,1614 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>VaultOS</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;700&display=swap');
+
+  :root {
+    --bg: #050a0e;
+    --bg2: #0a1218;
+    --bg3: #0f1c26;
+    --panel: #0d1f2d;
+    --border: #1a3a4a;
+    --accent: #00c8ff;
+    --accent2: #00ff9d;
+    --accent3: #ff4466;
+    --text: #c8dde8;
+    --text-dim: #4a7a8a;
+    --text-bright: #e8f4ff;
+    --mono: 'Share Tech Mono', monospace;
+    --body: 'Exo 2', sans-serif;
+    --glow: 0 0 20px rgba(0,200,255,0.15);
+    --glow-strong: 0 0 40px rgba(0,200,255,0.3);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    min-height: 100vh;
+    overflow-x: hidden;
+    user-select: none;
+  }
+
+  /* ── SCAN LINES OVERLAY ── */
+  body::before {
+    content:'';
+    position:fixed; inset:0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,200,255,0.015) 2px, rgba(0,200,255,0.015) 4px);
+    pointer-events:none; z-index:9999;
+  }
+
+  /* ── GRID BG ── */
+  .grid-bg {
+    position:fixed; inset:0;
+    background-image:
+      linear-gradient(rgba(0,200,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,200,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events:none;
+  }
+
+  /* ── SCREENS ── */
+  .screen { display:none; min-height:100vh; position:relative; }
+  .screen.active { display:flex; flex-direction:column; }
+
+  /* ── CALCULATOR (PANIC MODE) ── */
+  #calc-screen {
+    background: #1a1a1a;
+    display:none;
+    flex-direction:column;
+    min-height:100vh;
+  }
+  #calc-screen.active { display:flex; }
+
+  .calc-display {
+    background:#111;
+    padding:20px 20px 10px;
+    text-align:right;
+    border-bottom:1px solid #333;
+  }
+  .calc-expr { color:#555; font-size:14px; font-family:var(--mono); min-height:20px; }
+  .calc-val { color:#fff; font-size:48px; font-family:var(--mono); font-weight:300; }
+  .calc-grid {
+    display:grid; grid-template-columns:repeat(4,1fr);
+    gap:1px; background:#111; flex:1;
+  }
+  .calc-btn {
+    background:#1e1e1e; color:#fff; font-size:22px;
+    border:none; cursor:pointer; padding:22px 0;
+    font-family:var(--mono); transition:background .1s;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .calc-btn:active { background:#2e2e2e; }
+  .calc-btn.op { color:#f90; }
+  .calc-btn.eq { background:#f90; color:#000; }
+  .calc-btn.clr { color:#f55; }
+  .calc-btn.span2 { grid-column:span 2; }
+
+  /* ── SETUP PIN ── */
+  #setup-screen {
+    align-items:center; justify-content:center;
+    padding:40px 20px;
+  }
+  .setup-card {
+    background: var(--panel);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:40px 30px;
+    width:100%; max-width:340px;
+    text-align:center;
+    box-shadow: var(--glow-strong);
+  }
+  .vault-logo {
+    font-family:var(--mono);
+    font-size:28px; color:var(--accent);
+    letter-spacing:8px;
+    text-shadow: 0 0 30px var(--accent);
+    margin-bottom:6px;
+  }
+  .vault-sub { color:var(--text-dim); font-size:12px; letter-spacing:4px; margin-bottom:30px; }
+  .setup-title { color:var(--text-bright); font-size:16px; margin-bottom:8px; font-weight:600; }
+  .setup-desc { color:var(--text-dim); font-size:13px; margin-bottom:30px; line-height:1.5; }
+
+  /* ── PIN DOTS ── */
+  .pin-dots {
+    display:flex; justify-content:center; gap:16px; margin-bottom:30px;
+  }
+  .pin-dot {
+    width:18px; height:18px; border-radius:50%;
+    border:2px solid var(--border);
+    transition:all .2s;
+  }
+  .pin-dot.filled { background:var(--accent); border-color:var(--accent); box-shadow:0 0 12px var(--accent); }
+  .pin-dot.error { background:var(--accent3); border-color:var(--accent3); box-shadow:0 0 12px var(--accent3); animation:shake .3s; }
+
+  @keyframes shake {
+    0%,100%{transform:translateX(0)}
+    25%{transform:translateX(-6px)}
+    75%{transform:translateX(6px)}
+  }
+
+  /* ── NUMPAD ── */
+  .numpad {
+    display:grid; grid-template-columns:repeat(3,1fr);
+    gap:12px; margin-bottom:16px;
+  }
+  .num-btn {
+    background:var(--bg3); border:1px solid var(--border);
+    color:var(--text-bright); font-size:22px; font-family:var(--mono);
+    padding:18px; border-radius:10px; cursor:pointer;
+    transition:all .15s; position:relative; overflow:hidden;
+  }
+  .num-btn:active, .num-btn.pressed {
+    background:rgba(0,200,255,0.15);
+    border-color:var(--accent);
+    box-shadow:0 0 15px rgba(0,200,255,0.2);
+    transform:scale(0.96);
+  }
+  .num-btn.del { color:var(--accent3); }
+  .num-btn.empty { background:transparent; border-color:transparent; cursor:default; }
+
+  /* ── LOCK SCREEN ── */
+  #lock-screen {
+    align-items:center; justify-content:center; padding:40px 20px;
+  }
+  .lock-card {
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:16px; padding:40px 30px;
+    width:100%; max-width:340px; text-align:center;
+    box-shadow:var(--glow-strong);
+  }
+  .lock-time {
+    font-family:var(--mono); font-size:48px; color:var(--text-bright);
+    margin-bottom:4px; letter-spacing:4px;
+  }
+  .lock-date { color:var(--text-dim); font-size:12px; letter-spacing:2px; margin-bottom:30px; }
+  .lock-label { color:var(--text-dim); font-size:12px; letter-spacing:3px; margin-bottom:20px; }
+  .attempts-msg { color:var(--accent3); font-size:12px; margin-bottom:10px; min-height:18px; }
+  .timer-msg { color:#f90; font-size:13px; margin-bottom:10px; font-family:var(--mono); }
+  .fake-pin-hint { color:var(--text-dim); font-size:11px; margin-top:12px; }
+
+  /* ── MAIN APP ── */
+  #app-screen { flex-direction:column; }
+
+  .topbar {
+    background:var(--bg2); border-bottom:1px solid var(--border);
+    padding:12px 16px;
+    display:flex; align-items:center; justify-content:space-between;
+    position:sticky; top:0; z-index:100;
+  }
+  .topbar-logo { font-family:var(--mono); font-size:16px; color:var(--accent); letter-spacing:4px; }
+  .topbar-right { display:flex; gap:10px; align-items:center; }
+  .icon-btn {
+    background:none; border:1px solid var(--border);
+    color:var(--text-dim); padding:6px 10px; border-radius:6px;
+    font-size:14px; cursor:pointer; font-family:var(--mono);
+    transition:all .15s;
+  }
+  .icon-btn:active { border-color:var(--accent); color:var(--accent); }
+
+  .tab-bar {
+    display:flex; background:var(--bg2);
+    border-bottom:1px solid var(--border);
+    overflow-x:auto; scrollbar-width:none;
+  }
+  .tab-bar::-webkit-scrollbar { display:none; }
+  .tab {
+    padding:12px 16px; font-size:12px; font-family:var(--mono);
+    color:var(--text-dim); cursor:pointer; white-space:nowrap;
+    border-bottom:2px solid transparent; transition:all .15s;
+    flex-shrink:0;
+  }
+  .tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+  .tab:active { color:var(--text-bright); }
+
+  .content { flex:1; padding:16px; overflow-y:auto; padding-bottom:80px; }
+
+  /* ── MODULE CARDS ── */
+  .section-header {
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:16px;
+  }
+  .section-title { font-family:var(--mono); font-size:13px; color:var(--accent); letter-spacing:3px; }
+  .add-btn {
+    background:rgba(0,200,255,0.1); border:1px solid var(--accent);
+    color:var(--accent); padding:6px 14px; border-radius:6px;
+    font-size:12px; font-family:var(--mono); cursor:pointer;
+    transition:all .15s;
+  }
+  .add-btn:active { background:rgba(0,200,255,0.25); }
+
+  /* ── NOTES ── */
+  .note-card {
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:10px; padding:14px; margin-bottom:10px;
+    cursor:pointer; transition:all .15s; position:relative;
+  }
+  .note-card:active { border-color:var(--accent); box-shadow:var(--glow); }
+  .note-title { font-size:14px; color:var(--text-bright); margin-bottom:4px; font-weight:600; }
+  .note-preview { font-size:12px; color:var(--text-dim); line-height:1.4; overflow:hidden; max-height:36px; }
+  .note-date { font-size:10px; color:var(--text-dim); font-family:var(--mono); margin-top:8px; }
+  .note-del { position:absolute; top:10px; right:10px; background:none; border:none; color:var(--accent3); font-size:16px; cursor:pointer; padding:4px; }
+
+  /* ── GALLERY ── */
+  .gallery-grid {
+    display:grid; grid-template-columns:repeat(3,1fr); gap:3px;
+  }
+  .gallery-item {
+    aspect-ratio:1; background:var(--bg3); border:1px solid var(--border);
+    border-radius:6px; overflow:hidden; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    position:relative; transition:all .15s;
+  }
+  .gallery-item img { width:100%; height:100%; object-fit:cover; }
+  .gallery-item .del-overlay {
+    position:absolute; top:4px; right:4px;
+    background:rgba(0,0,0,0.7); border-radius:50%;
+    width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+    color:var(--accent3); font-size:12px; cursor:pointer;
+  }
+  .gallery-item .file-icon { font-size:28px; }
+
+  /* ── FILES ── */
+  .file-item {
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:10px; padding:14px; margin-bottom:8px;
+    display:flex; align-items:center; gap:12px;
+    position:relative; cursor:pointer; transition:all .15s;
+  }
+  .file-item:active { border-color:var(--accent); }
+  .file-icon-box {
+    width:44px; height:44px; background:var(--bg3);
+    border:1px solid var(--border); border-radius:8px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:22px; flex-shrink:0;
+  }
+  .file-info { flex:1; min-width:0; }
+  .file-name { font-size:13px; color:var(--text-bright); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .file-meta { font-size:11px; color:var(--text-dim); font-family:var(--mono); margin-top:3px; }
+  .file-del { background:none; border:none; color:var(--accent3); font-size:18px; cursor:pointer; padding:4px 8px; }
+
+  /* ── FOLDERS ── */
+  .folder-card {
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:10px; padding:16px; margin-bottom:8px;
+    display:flex; align-items:center; gap:12px;
+    cursor:pointer; transition:all .15s;
+  }
+  .folder-card:active { border-color:var(--accent); box-shadow:var(--glow); }
+  .folder-icon { font-size:28px; }
+  .folder-info { flex:1; }
+  .folder-name { font-size:14px; color:var(--text-bright); font-weight:600; }
+  .folder-count { font-size:11px; color:var(--text-dim); font-family:var(--mono); margin-top:2px; }
+  .folder-del { background:none; border:none; color:var(--accent3); font-size:18px; cursor:pointer; padding:4px 8px; }
+
+  /* ── JOURNAL ── */
+  .journal-entry {
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:10px; padding:14px; margin-bottom:10px;
+    position:relative;
+  }
+  .journal-date { font-family:var(--mono); font-size:11px; color:var(--accent); margin-bottom:6px; }
+  .journal-text { font-size:13px; color:var(--text); line-height:1.6; }
+  .journal-del { position:absolute; top:10px; right:10px; background:none; border:none; color:var(--accent3); font-size:16px; cursor:pointer; padding:4px; }
+
+  /* ── MODALS ── */
+  .modal-overlay {
+    display:none; position:fixed; inset:0;
+    background:rgba(0,0,0,0.85); z-index:1000;
+    align-items:center; justify-content:center; padding:20px;
+  }
+  .modal-overlay.open { display:flex; }
+  .modal {
+    background:var(--bg2); border:1px solid var(--border);
+    border-radius:14px; padding:24px; width:100%; max-width:400px;
+    max-height:85vh; overflow-y:auto;
+    box-shadow:var(--glow-strong);
+  }
+  .modal h3 { font-family:var(--mono); color:var(--accent); font-size:14px; letter-spacing:3px; margin-bottom:16px; }
+  .modal-input {
+    width:100%; background:var(--bg3); border:1px solid var(--border);
+    color:var(--text-bright); padding:12px; border-radius:8px;
+    font-family:var(--body); font-size:14px; margin-bottom:12px;
+    outline:none; transition:border .15s;
+  }
+  .modal-input:focus { border-color:var(--accent); }
+  .modal-textarea {
+    width:100%; background:var(--bg3); border:1px solid var(--border);
+    color:var(--text-bright); padding:12px; border-radius:8px;
+    font-family:var(--body); font-size:14px; margin-bottom:12px;
+    outline:none; min-height:120px; resize:vertical; transition:border .15s;
+  }
+  .modal-textarea:focus { border-color:var(--accent); }
+  .modal-btns { display:flex; gap:10px; margin-top:4px; }
+  .btn-primary {
+    flex:1; background:rgba(0,200,255,0.15); border:1px solid var(--accent);
+    color:var(--accent); padding:12px; border-radius:8px;
+    font-family:var(--mono); font-size:13px; cursor:pointer; transition:all .15s;
+  }
+  .btn-primary:active { background:rgba(0,200,255,0.3); }
+  .btn-cancel {
+    flex:1; background:var(--bg3); border:1px solid var(--border);
+    color:var(--text-dim); padding:12px; border-radius:8px;
+    font-family:var(--mono); font-size:13px; cursor:pointer; transition:all .15s;
+  }
+  .btn-cancel:active { background:var(--bg2); }
+  .btn-danger {
+    flex:1; background:rgba(255,68,102,0.1); border:1px solid var(--accent3);
+    color:var(--accent3); padding:12px; border-radius:8px;
+    font-family:var(--mono); font-size:13px; cursor:pointer;
+  }
+
+  /* ── IMAGE VIEWER ── */
+  #img-viewer {
+    display:none; position:fixed; inset:0;
+    background:rgba(0,0,0,0.95); z-index:2000;
+    align-items:center; justify-content:center; flex-direction:column;
+  }
+  #img-viewer.open { display:flex; }
+  #img-viewer img { max-width:100%; max-height:80vh; object-fit:contain; border-radius:8px; }
+  .viewer-close {
+    position:absolute; top:16px; right:16px;
+    background:rgba(255,68,102,0.2); border:1px solid var(--accent3);
+    color:var(--accent3); padding:8px 14px; border-radius:6px;
+    font-family:var(--mono); font-size:13px; cursor:pointer;
+  }
+
+  /* ── SECRET FOLDERS MODAL ── */
+  .secret-pin-dots { display:flex; justify-content:center; gap:12px; margin:16px 0; }
+  .secret-pin-dot {
+    width:14px; height:14px; border-radius:50%;
+    border:2px solid var(--border); transition:all .2s;
+  }
+  .secret-pin-dot.filled { background:var(--accent2); border-color:var(--accent2); box-shadow:0 0 10px var(--accent2); }
+
+  /* ── SETTINGS ── */
+  .settings-item {
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:10px; padding:16px; margin-bottom:8px;
+    display:flex; align-items:center; justify-content:space-between;
+    cursor:pointer; transition:all .15s;
+  }
+  .settings-item:active { border-color:var(--accent); }
+  .settings-label { font-size:14px; color:var(--text-bright); }
+  .settings-desc { font-size:11px; color:var(--text-dim); margin-top:3px; }
+  .settings-arrow { color:var(--text-dim); font-size:18px; }
+
+  /* ── EMPTY STATE ── */
+  .empty-state {
+    text-align:center; padding:50px 20px;
+    color:var(--text-dim); font-size:13px; font-family:var(--mono);
+  }
+  .empty-icon { font-size:40px; margin-bottom:12px; opacity:0.4; }
+
+  /* ── TOAST ── */
+  .toast {
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(100px);
+    background:var(--bg2); border:1px solid var(--accent);
+    color:var(--accent); padding:10px 20px; border-radius:8px;
+    font-family:var(--mono); font-size:12px; z-index:9998;
+    transition:transform .3s; white-space:nowrap;
+    box-shadow:var(--glow-strong);
+  }
+  .toast.show { transform:translateX(-50%) translateY(0); }
+  .toast.error { border-color:var(--accent3); color:var(--accent3); }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+  .fade-in { animation:fadeIn .3s ease forwards; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+  .pulse { animation:pulse 2s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  .blink { animation:blink 1s infinite; }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width:4px; }
+  ::-webkit-scrollbar-track { background:var(--bg); }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+  /* ── DESTROY SCREEN ── */
+  #destroy-screen {
+    display:none; position:fixed; inset:0;
+    background:#000; z-index:99999;
+    align-items:center; justify-content:center;
+    flex-direction:column; gap:16px;
+  }
+  #destroy-screen.active { display:flex; }
+  .destroy-text { font-family:var(--mono); color:var(--accent3); font-size:18px; text-align:center; }
+  .destroy-sub { font-family:var(--mono); color:#333; font-size:12px; }
+
+  /* ── STATUS BAR ── */
+  .status-bar {
+    display:flex; align-items:center; gap:8px;
+    padding:6px 16px; background:var(--bg);
+    border-bottom:1px solid var(--border);
+    font-family:var(--mono); font-size:10px; color:var(--text-dim);
+  }
+  .status-dot { width:6px; height:6px; border-radius:50%; background:var(--accent2); }
+
+  /* ── FILE UPLOAD AREA ── */
+  .upload-area {
+    border:2px dashed var(--border); border-radius:10px;
+    padding:30px; text-align:center; color:var(--text-dim);
+    font-size:13px; font-family:var(--mono); cursor:pointer;
+    transition:all .2s; margin-bottom:16px;
+  }
+  .upload-area:active { border-color:var(--accent); color:var(--accent); }
+  .upload-icon { font-size:32px; margin-bottom:8px; }
+</style>
+</head>
+<body>
+
+<div class="grid-bg"></div>
+
+<!-- DESTROY SCREEN -->
+<div id="destroy-screen">
+  <div class="destroy-text">⚠ VAULT DESTROYED ⚠</div>
+  <div class="destroy-sub">All data has been wiped.</div>
+</div>
+
+<!-- CALCULATOR (PANIC) -->
+<div id="calc-screen">
+  <div class="calc-display">
+    <div class="calc-expr" id="calc-expr"></div>
+    <div class="calc-val" id="calc-val">0</div>
+  </div>
+  <div class="calc-grid">
+    <button class="calc-btn clr" onclick="calcInput('AC')">AC</button>
+    <button class="calc-btn op" onclick="calcInput('+/-')">+/-</button>
+    <button class="calc-btn op" onclick="calcInput('%')">%</button>
+    <button class="calc-btn op" onclick="calcInput('/')">÷</button>
+    <button class="calc-btn" onclick="calcInput('7')">7</button>
+    <button class="calc-btn" onclick="calcInput('8')">8</button>
+    <button class="calc-btn" onclick="calcInput('9')">9</button>
+    <button class="calc-btn op" onclick="calcInput('*')">×</button>
+    <button class="calc-btn" onclick="calcInput('4')">4</button>
+    <button class="calc-btn" onclick="calcInput('5')">5</button>
+    <button class="calc-btn" onclick="calcInput('6')">6</button>
+    <button class="calc-btn op" onclick="calcInput('-')">−</button>
+    <button class="calc-btn" onclick="calcInput('1')">1</button>
+    <button class="calc-btn" onclick="calcInput('2')">2</button>
+    <button class="calc-btn" onclick="calcInput('3')">3</button>
+    <button class="calc-btn op" onclick="calcInput('+')">+</button>
+    <button class="calc-btn span2" onclick="calcInput('0')">0</button>
+    <button class="calc-btn" onclick="calcInput('.')">.</button>
+    <button class="calc-btn eq" onclick="calcInput('=')">=</button>
+  </div>
+</div>
+
+<!-- SETUP SCREEN -->
+<div id="setup-screen" class="screen">
+  <div class="setup-card fade-in">
+    <div class="vault-logo">VAULT<span style="color:var(--accent2)">OS</span></div>
+    <div class="vault-sub">SECURE PERSONAL VAULT</div>
+    <div class="setup-title">Créer votre PIN secret</div>
+    <div class="setup-desc" id="setup-desc">Choisissez un code PIN à 4 chiffres.<br>Ne l'oubliez pas — il est irrecupérable.</div>
+    <div class="pin-dots" id="setup-dots">
+      <div class="pin-dot"></div><div class="pin-dot"></div>
+      <div class="pin-dot"></div><div class="pin-dot"></div>
+    </div>
+    <div class="numpad" id="setup-numpad">
+      <button class="num-btn" onclick="setupPin('1')">1</button>
+      <button class="num-btn" onclick="setupPin('2')">2</button>
+      <button class="num-btn" onclick="setupPin('3')">3</button>
+      <button class="num-btn" onclick="setupPin('4')">4</button>
+      <button class="num-btn" onclick="setupPin('5')">5</button>
+      <button class="num-btn" onclick="setupPin('6')">6</button>
+      <button class="num-btn" onclick="setupPin('7')">7</button>
+      <button class="num-btn" onclick="setupPin('8')">8</button>
+      <button class="num-btn" onclick="setupPin('9')">9</button>
+      <button class="num-btn empty"></button>
+      <button class="num-btn" onclick="setupPin('0')">0</button>
+      <button class="num-btn del" onclick="setupDel()">⌫</button>
+    </div>
+    <div style="color:var(--text-dim);font-size:11px;font-family:var(--mono);margin-top:8px">
+      Faux PIN : entrez 0000 pour le mode camouflage
+    </div>
+  </div>
+</div>
+
+<!-- LOCK SCREEN -->
+<div id="lock-screen" class="screen">
+  <div class="lock-card fade-in">
+    <div class="vault-logo">VAULT<span style="color:var(--accent2)">OS</span></div>
+    <div class="vault-sub">SECURE PERSONAL VAULT</div>
+    <div class="lock-time" id="lock-time">--:--</div>
+    <div class="lock-date" id="lock-date">---</div>
+    <div class="lock-label">ENTREZ VOTRE PIN</div>
+    <div class="pin-dots" id="lock-dots">
+      <div class="pin-dot"></div><div class="pin-dot"></div>
+      <div class="pin-dot"></div><div class="pin-dot"></div>
+    </div>
+    <div class="attempts-msg" id="attempts-msg"></div>
+    <div class="timer-msg" id="timer-msg"></div>
+    <div class="numpad">
+      <button class="num-btn" onclick="lockPin('1')">1</button>
+      <button class="num-btn" onclick="lockPin('2')">2</button>
+      <button class="num-btn" onclick="lockPin('3')">3</button>
+      <button class="num-btn" onclick="lockPin('4')">4</button>
+      <button class="num-btn" onclick="lockPin('5')">5</button>
+      <button class="num-btn" onclick="lockPin('6')">6</button>
+      <button class="num-btn" onclick="lockPin('7')">7</button>
+      <button class="num-btn" onclick="lockPin('8')">8</button>
+      <button class="num-btn" onclick="lockPin('9')">9</button>
+      <button class="num-btn empty"></button>
+      <button class="num-btn" onclick="lockPin('0')">0</button>
+      <button class="num-btn del" onclick="lockDel()">⌫</button>
+    </div>
+    <div class="fake-pin-hint">PIN 0000 → mode camouflage</div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app-screen" class="screen">
+  <div class="status-bar">
+    <div class="status-dot pulse"></div>
+    <span>VAULT_OS // SECURE // LOCAL_ONLY</span>
+    <span style="margin-left:auto" id="status-time"></span>
+  </div>
+  <div class="topbar">
+    <div class="topbar-logo">⬡ VAULT<span style="color:var(--accent2)">OS</span></div>
+    <div class="topbar-right">
+      <button class="icon-btn" onclick="triggerPanic()" title="Panic">⚠</button>
+      <button class="icon-btn" onclick="showTab('settings')">⚙</button>
+    </div>
+  </div>
+  <div class="tab-bar">
+    <div class="tab active" onclick="showTab('notes')" id="tab-notes">◈ NOTES</div>
+    <div class="tab" onclick="showTab('gallery')" id="tab-gallery">◈ GALERIE</div>
+    <div class="tab" onclick="showTab('videos')" id="tab-videos">◈ VIDÉOS</div>
+    <div class="tab" onclick="showTab('files')" id="tab-files">◈ FICHIERS</div>
+    <div class="tab" onclick="showTab('folders')" id="tab-folders">◈ DOSSIERS</div>
+    <div class="tab" onclick="showTab('journal')" id="tab-journal">◈ JOURNAL</div>
+    <div class="tab" onclick="showTab('settings')" id="tab-settings">◈ CONFIG</div>
+  </div>
+  <div class="content" id="app-content"></div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- IMAGE VIEWER -->
+<div id="img-viewer">
+  <button class="viewer-close" onclick="closeViewer()">✕ FERMER</button>
+  <img id="viewer-img" src="" alt="">
+</div>
+
+<!-- NOTE MODAL -->
+<div class="modal-overlay" id="note-modal">
+  <div class="modal">
+    <h3>◈ NOUVELLE NOTE</h3>
+    <input class="modal-input" id="note-title-input" placeholder="Titre...">
+    <textarea class="modal-textarea" id="note-body-input" placeholder="Contenu..."></textarea>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal('note-modal')">ANNULER</button>
+      <button class="btn-primary" onclick="saveNote()">SAUVER</button>
+    </div>
+  </div>
+</div>
+
+<!-- JOURNAL MODAL -->
+<div class="modal-overlay" id="journal-modal">
+  <div class="modal">
+    <h3>◈ ENTRÉE JOURNAL</h3>
+    <textarea class="modal-textarea" id="journal-input" placeholder="Écrire..."></textarea>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal('journal-modal')">ANNULER</button>
+      <button class="btn-primary" onclick="saveJournal()">SAUVER</button>
+    </div>
+  </div>
+</div>
+
+<!-- FOLDER CREATE MODAL -->
+<div class="modal-overlay" id="folder-modal">
+  <div class="modal">
+    <h3>◈ NOUVEAU DOSSIER</h3>
+    <input class="modal-input" id="folder-name-input" placeholder="Nom du dossier...">
+    <div style="color:var(--text-dim);font-size:12px;margin-bottom:10px">
+      Laisser vide = pas de code supplémentaire
+    </div>
+    <input class="modal-input" id="folder-pin-input" placeholder="Code secret (optionnel, 4 chiffres)" maxlength="4" type="number">
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal('folder-modal')">ANNULER</button>
+      <button class="btn-primary" onclick="saveFolder()">CRÉER</button>
+    </div>
+  </div>
+</div>
+
+<!-- FOLDER PIN MODAL -->
+<div class="modal-overlay" id="folder-unlock-modal">
+  <div class="modal" style="text-align:center">
+    <h3>◈ DOSSIER VERROUILLÉ</h3>
+    <div style="color:var(--text-dim);font-size:12px;margin-bottom:8px">Entrez le code du dossier</div>
+    <div class="secret-pin-dots" id="folder-unlock-dots">
+      <div class="secret-pin-dot"></div><div class="secret-pin-dot"></div>
+      <div class="secret-pin-dot"></div><div class="secret-pin-dot"></div>
+    </div>
+    <div style="color:var(--accent3);font-size:12px;min-height:18px;margin-bottom:10px" id="folder-unlock-err"></div>
+    <div class="numpad">
+      <button class="num-btn" onclick="folderUnlockPin('1')">1</button>
+      <button class="num-btn" onclick="folderUnlockPin('2')">2</button>
+      <button class="num-btn" onclick="folderUnlockPin('3')">3</button>
+      <button class="num-btn" onclick="folderUnlockPin('4')">4</button>
+      <button class="num-btn" onclick="folderUnlockPin('5')">5</button>
+      <button class="num-btn" onclick="folderUnlockPin('6')">6</button>
+      <button class="num-btn" onclick="folderUnlockPin('7')">7</button>
+      <button class="num-btn" onclick="folderUnlockPin('8')">8</button>
+      <button class="num-btn" onclick="folderUnlockPin('9')">9</button>
+      <button class="num-btn empty"></button>
+      <button class="num-btn" onclick="folderUnlockPin('0')">0</button>
+      <button class="num-btn del" onclick="folderUnlockDel()">⌫</button>
+    </div>
+    <button class="btn-cancel" style="width:100%;margin-top:10px" onclick="closeModal('folder-unlock-modal')">ANNULER</button>
+  </div>
+</div>
+
+<!-- EXPORT MODAL -->
+<div class="modal-overlay" id="export-modal">
+  <div class="modal">
+    <h3>◈ EXPORT / PARTAGE</h3>
+    <div style="color:var(--text-dim);font-size:13px;margin-bottom:16px;line-height:1.5">
+      Exporte toutes tes données dans un fichier <code style="color:var(--accent)">.vaultbak</code> chiffré.<br><br>
+      Pour partager VaultOS vierge à quelqu'un, sauvegarde simplement cette page HTML.
+    </div>
+    <div class="modal-btns" style="flex-direction:column">
+      <button class="btn-primary" onclick="exportData()">💾 EXPORTER MES DONNÉES</button>
+      <div style="height:8px"></div>
+      <button class="btn-primary" style="border-color:var(--accent2);color:var(--accent2)" onclick="triggerImport()">📂 IMPORTER UNE SAUVEGARDE</button>
+      <input type="file" id="import-file" accept=".vaultbak" style="display:none" onchange="importData(event)">
+    </div>
+    <button class="btn-cancel" style="width:100%;margin-top:10px" onclick="closeModal('export-modal')">FERMER</button>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════
+let state = {
+  pin: null,
+  fakePin: '0000',
+  notes: [],
+  gallery: [],
+  videos: [],
+  files: [],
+  folders: [],
+  journal: [],
+  lockTimeout: 3, // minutes
+};
+
+let lockTimer = null;
+let currentTab = 'notes';
+let setupPhase = 'enter'; // enter | confirm
+let setupFirst = '';
+let setupCurrent = '';
+let lockCurrent = '';
+let lockAttempts = 0;
+let lockBlocked = false;
+let lockBlockTimer = null;
+let folderUnlockCurrent = '';
+let folderUnlockTarget = null;
+let folderUnlockCallback = null;
+
+// ══════════════════════════════════════════════
+// SIMPLE XOR CIPHER (obfuscation for local storage)
+// ══════════════════════════════════════════════
+function xorCipher(str, key) {
+  let result = '';
+  for (let i = 0; i < str.length; i++) {
+    result += String.fromCharCode(str.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+  }
+  return btoa(unescape(encodeURIComponent(result)));
+}
+function xorDecipher(encoded, key) {
+  try {
+    const str = decodeURIComponent(escape(atob(encoded)));
+    let result = '';
+    for (let i = 0; i < str.length; i++) {
+      result += String.fromCharCode(str.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+    }
+    return result;
+  } catch { return null; }
+}
+
+// ══════════════════════════════════════════════
+// STORAGE
+// ══════════════════════════════════════════════
+function saveState() {
+  const key = state.pin || 'vault_default';
+  const encrypted = xorCipher(JSON.stringify(state), key + '_vault_secret_2025');
+  localStorage.setItem('vaultos_data', encrypted);
+}
+
+function loadState() {
+  const raw = localStorage.getItem('vaultos_data');
+  if (!raw) return false;
+  // Try to decrypt — we need pin first
+  return raw;
+}
+
+function decryptState(pin) {
+  const raw = localStorage.getItem('vaultos_data');
+  if (!raw) return null;
+  const decrypted = xorDecipher(raw, pin + '_vault_secret_2025');
+  if (!decrypted) return null;
+  try {
+    return JSON.parse(decrypted);
+  } catch { return null; }
+}
+
+// ══════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════
+window.addEventListener('load', () => {
+  updateLockTime();
+  setInterval(updateLockTime, 1000);
+  setInterval(() => {
+    if (document.getElementById('app-screen').classList.contains('active')) {
+      document.getElementById('status-time').textContent = new Date().toLocaleTimeString('fr-FR');
+    }
+  }, 1000);
+
+  const raw = localStorage.getItem('vaultos_data');
+  if (!raw) {
+    showScreen('setup-screen');
+  } else {
+    showScreen('lock-screen');
+  }
+});
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const el = document.getElementById(id);
+  if (el) el.classList.add('active');
+  document.getElementById('calc-screen').classList.remove('active');
+}
+
+// ══════════════════════════════════════════════
+// CLOCK
+// ══════════════════════════════════════════════
+function updateLockTime() {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2,'0');
+  const m = String(now.getMinutes()).padStart(2,'0');
+  const days = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
+  const months = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+  const el = document.getElementById('lock-time');
+  const el2 = document.getElementById('lock-date');
+  if (el) el.textContent = h + ':' + m;
+  if (el2) el2.textContent = days[now.getDay()] + ' ' + now.getDate() + ' ' + months[now.getMonth()];
+}
+
+// ══════════════════════════════════════════════
+// SETUP PIN
+// ══════════════════════════════════════════════
+function setupPin(d) {
+  if (setupCurrent.length >= 4) return;
+  setupCurrent += d;
+  updateSetupDots();
+  if (setupCurrent.length === 4) {
+    setTimeout(() => {
+      if (setupPhase === 'enter') {
+        setupFirst = setupCurrent;
+        setupCurrent = '';
+        setupPhase = 'confirm';
+        document.getElementById('setup-desc').textContent = 'Confirmez votre PIN.';
+        updateSetupDots();
+      } else {
+        if (setupCurrent === setupFirst) {
+          state.pin = setupFirst;
+          saveState();
+          showApp();
+          toast('✓ PIN créé avec succès');
+        } else {
+          setupCurrent = '';
+          setupFirst = '';
+          setupPhase = 'enter';
+          document.getElementById('setup-desc').textContent = 'PINs différents. Recommencez.';
+          errorDots('setup-dots');
+          updateSetupDots();
+        }
+      }
+    }, 150);
+  }
+}
+function setupDel() {
+  setupCurrent = setupCurrent.slice(0,-1);
+  updateSetupDots();
+}
+function updateSetupDots() {
+  const dots = document.querySelectorAll('#setup-dots .pin-dot');
+  dots.forEach((d,i) => {
+    d.classList.toggle('filled', i < setupCurrent.length);
+    d.classList.remove('error');
+  });
+}
+
+// ══════════════════════════════════════════════
+// LOCK SCREEN
+// ══════════════════════════════════════════════
+function lockPin(d) {
+  if (lockBlocked) return;
+  if (lockCurrent.length >= 4) return;
+  lockCurrent += d;
+  updateLockDots();
+  if (lockCurrent.length === 4) {
+    setTimeout(() => checkLockPin(), 150);
+  }
+}
+function lockDel() {
+  if (lockBlocked) return;
+  lockCurrent = lockCurrent.slice(0,-1);
+  updateLockDots();
+}
+function updateLockDots() {
+  const dots = document.querySelectorAll('#lock-dots .pin-dot');
+  dots.forEach((d,i) => {
+    d.classList.toggle('filled', i < lockCurrent.length);
+    d.classList.remove('error');
+  });
+}
+function checkLockPin() {
+  const entered = lockCurrent;
+  lockCurrent = '';
+  updateLockDots();
+
+  // FAKE PIN → calculator
+  if (entered === state.fakePin || entered === '0000') {
+    if (!state.pin) return;
+    triggerPanic();
+    return;
+  }
+
+  // Try decrypt
+  const loaded = decryptState(entered);
+  if (loaded) {
+    state = loaded;
+    lockAttempts = 0;
+    document.getElementById('attempts-msg').textContent = '';
+    showApp();
+    return;
+  }
+
+  // Wrong PIN
+  lockAttempts++;
+  
+  if (lockAttempts >= 10) {
+    destroyVault();
+    return;
+  }
+
+  errorDots('lock-dots');
+
+  if (lockAttempts === 5) {
+    // Block for 1 minute
+    lockBlocked = true;
+    let remaining = 60;
+    document.getElementById('attempts-msg').textContent = '⚠ Trop de tentatives';
+    const countdown = setInterval(() => {
+      remaining--;
+      document.getElementById('timer-msg').textContent = `Attendre : ${remaining}s`;
+      if (remaining <= 0) {
+        clearInterval(countdown);
+        lockBlocked = false;
+        document.getElementById('timer-msg').textContent = '';
+        document.getElementById('attempts-msg').textContent = `${lockAttempts}/10 tentatives`;
+      }
+    }, 1000);
+  } else {
+    const rem = 10 - lockAttempts;
+    document.getElementById('attempts-msg').textContent = `PIN incorrect — ${rem} tentative${rem>1?'s':''} restante${rem>1?'s':''}`;
+  }
+}
+
+function errorDots(id) {
+  const dots = document.querySelectorAll(`#${id} .pin-dot`);
+  dots.forEach(d => { d.classList.add('error'); d.classList.remove('filled'); });
+  setTimeout(() => dots.forEach(d => d.classList.remove('error')), 500);
+}
+
+function destroyVault() {
+  localStorage.clear();
+  state = { pin:null, fakePin:'0000', notes:[], gallery:[], videos:[], files:[], folders:[], journal:[], lockTimeout:3 };
+  document.getElementById('destroy-screen').classList.add('active');
+  setTimeout(() => {
+    document.getElementById('destroy-screen').classList.remove('active');
+    showScreen('setup-screen');
+    setupPhase = 'enter'; setupFirst = ''; setupCurrent = '';
+    document.getElementById('setup-desc').textContent = 'Choisissez un code PIN à 4 chiffres.';
+    updateSetupDots();
+    lockAttempts = 0;
+    lockBlocked = false;
+  }, 3000);
+}
+
+// ══════════════════════════════════════════════
+// APP
+// ══════════════════════════════════════════════
+function showApp() {
+  showScreen('app-screen');
+  startLockTimer();
+  renderTab(currentTab);
+}
+
+function startLockTimer() {
+  if (lockTimer) clearTimeout(lockTimer);
+  const ms = (state.lockTimeout || 3) * 60 * 1000;
+  lockTimer = setTimeout(() => {
+    lockCurrent = '';
+    updateLockDots();
+    showScreen('lock-screen');
+  }, ms);
+  ['touchstart','click','keydown'].forEach(e => {
+    document.removeEventListener(e, resetLockTimer);
+    document.addEventListener(e, resetLockTimer, {passive:true});
+  });
+}
+function resetLockTimer() {
+  if (lockTimer) clearTimeout(lockTimer);
+  const ms = (state.lockTimeout || 3) * 60 * 1000;
+  lockTimer = setTimeout(() => {
+    lockCurrent = '';
+    updateLockDots();
+    showScreen('lock-screen');
+  }, ms);
+}
+
+function showTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  const el = document.getElementById('tab-' + tab);
+  if (el) el.classList.add('active');
+  renderTab(tab);
+}
+
+function renderTab(tab) {
+  const c = document.getElementById('app-content');
+  c.innerHTML = '';
+  if (tab === 'notes') renderNotes(c);
+  else if (tab === 'gallery') renderGallery(c);
+  else if (tab === 'videos') renderVideos(c);
+  else if (tab === 'files') renderFiles(c);
+  else if (tab === 'folders') renderFolders(c);
+  else if (tab === 'journal') renderJournal(c);
+  else if (tab === 'settings') renderSettings(c);
+}
+
+// ══════════════════════════════════════════════
+// NOTES
+// ══════════════════════════════════════════════
+function renderNotes(c) {
+  c.innerHTML = `
+    <div class="section-header fade-in">
+      <div class="section-title">NOTES PRIVÉES</div>
+      <button class="add-btn" onclick="openModal('note-modal')">+ AJOUTER</button>
+    </div>`;
+  if (!state.notes.length) {
+    c.innerHTML += `<div class="empty-state"><div class="empty-icon">📝</div>Aucune note</div>`;
+    return;
+  }
+  state.notes.forEach((n, i) => {
+    const d = document.createElement('div');
+    d.className = 'note-card fade-in';
+    d.innerHTML = `
+      <button class="note-del" onclick="delNote(${i},event)">✕</button>
+      <div class="note-title">${esc(n.title)}</div>
+      <div class="note-preview">${esc(n.body)}</div>
+      <div class="note-date">${n.date}</div>`;
+    c.appendChild(d);
+  });
+}
+function saveNote() {
+  const t = document.getElementById('note-title-input').value.trim();
+  const b = document.getElementById('note-body-input').value.trim();
+  if (!t && !b) return;
+  state.notes.unshift({ title: t||'Sans titre', body: b, date: now() });
+  saveState();
+  closeModal('note-modal');
+  document.getElementById('note-title-input').value = '';
+  document.getElementById('note-body-input').value = '';
+  renderTab('notes');
+  toast('✓ Note sauvegardée');
+}
+function delNote(i, e) {
+  e.stopPropagation();
+  state.notes.splice(i,1);
+  saveState();
+  renderTab('notes');
+}
+
+// ══════════════════════════════════════════════
+// GALLERY
+// ══════════════════════════════════════════════
+function renderGallery(c) {
+  c.innerHTML = `
+    <div class="section-header fade-in">
+      <div class="section-title">GALERIE SECRÈTE</div>
+      <button class="add-btn" onclick="addPhoto()">+ PHOTO</button>
+    </div>
+    <input type="file" id="photo-input" accept="image/*" multiple style="display:none" onchange="handlePhotos(event)">`;
+  if (!state.gallery.length) {
+    c.innerHTML += `<div class="empty-state"><div class="empty-icon">🖼️</div>Aucune photo</div>`;
+    return;
+  }
+  const grid = document.createElement('div');
+  grid.className = 'gallery-grid fade-in';
+  state.gallery.forEach((img, i) => {
+    const item = document.createElement('div');
+    item.className = 'gallery-item';
+    item.innerHTML = `<img src="${img.data}" onclick="viewImg('${img.data}')"><div class="del-overlay" onclick="delPhoto(${i},event)">✕</div>`;
+    grid.appendChild(item);
+  });
+  c.appendChild(grid);
+}
+function addPhoto() { document.getElementById('photo-input').click(); }
+function handlePhotos(e) {
+  const files = Array.from(e.target.files);
+  let done = 0;
+  files.forEach(f => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      state.gallery.push({ name: f.name, data: ev.target.result, date: now() });
+      done++;
+      if (done === files.length) { saveState(); renderTab('gallery'); toast(`✓ ${done} photo(s) ajoutée(s)`); }
+    };
+    reader.readAsDataURL(f);
+  });
+  e.target.value = '';
+}
+function delPhoto(i, e) {
+  e.stopPropagation();
+  state.gallery.splice(i,1);
+  saveState(); renderTab('gallery');
+}
+function viewImg(src) {
+  document.getElementById('viewer-img').src = src;
+  document.getElementById('img-viewer').classList.add('open');
+}
+function closeViewer() {
+  document.getElementById('img-viewer').classList.remove('open');
+  document.getElementById('viewer-img').src = '';
+}
+
+// ══════════════════════════════════════════════
+// VIDEOS
+// ══════════════════════════════════════════════
+function renderVideos(c) {
+  c.innerHTML = `
+    <div class="section-header fade-in">
+      <div class="section-title">VIDÉOS PRIVÉES</div>
+      <button class="add-btn" onclick="addVideo()">+ VIDÉO</button>
+    </div>
+    <input type="file" id="video-input" accept="video/*" style="display:none" onchange="handleVideo(event)">`;
+  if (!state.videos.length) {
+    c.innerHTML += `<div class="empty-state"><div class="empty-icon">🎬</div>Aucune vidéo</div>`;
+    return;
+  }
+  state.videos.forEach((v, i) => {
+    const d = document.createElement('div');
+    d.className = 'file-item fade-in';
+    d.innerHTML = `
+      <div class="file-icon-box">🎬</div>
+      <div class="file-info">
+        <div class="file-name">${esc(v.name)}</div>
+        <div class="file-meta">${v.size} · ${v.date}</div>
+      </div>
+      <button class="file-del" onclick="delVideo(${i},event)">✕</button>`;
+    d.onclick = () => playVideo(v.data, v.name);
+    c.appendChild(d);
+  });
+}
+function addVideo() { document.getElementById('video-input').click(); }
+function handleVideo(e) {
+  const f = e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    state.videos.push({ name: f.name, data: ev.target.result, size: fmtSize(f.size), date: now() });
+    saveState(); renderTab('videos'); toast('✓ Vidéo ajoutée');
+  };
+  reader.readAsDataURL(f);
+  e.target.value = '';
+}
+function playVideo(src, name) {
+  const overlay = document.getElementById('img-viewer');
+  overlay.innerHTML = `
+    <button class="viewer-close" onclick="closeViewer()">✕ FERMER</button>
+    <video src="${src}" controls style="max-width:100%;max-height:80vh;border-radius:8px"></video>
+    <div style="color:var(--text-dim);font-size:12px;margin-top:8px;font-family:var(--mono)">${esc(name)}</div>`;
+  overlay.classList.add('open');
+}
+function delVideo(i, e) {
+  e.stopPropagation();
+  state.videos.splice(i,1);
+  saveState(); renderTab('videos');
+}
+
+// ══════════════════════════════════════════════
+// FILES (with ZIP)
+// ══════════════════════════════════════════════
+function renderFiles(c) {
+  c.innerHTML = `
+    <div class="section-header fade-in">
+      <div class="section-title">COFFRE FICHIERS</div>
+      <button class="add-btn" onclick="addFile()">+ FICHIER</button>
+    </div>
+    <input type="file" id="file-input" multiple style="display:none" onchange="handleFiles(event)">`;
+  if (!state.files.length) {
+    c.innerHTML += `<div class="empty-state"><div class="empty-icon">📁</div>Aucun fichier</div>`;
+    return;
+  }
+  state.files.forEach((f, i) => {
+    const d = document.createElement('div');
+    d.className = 'file-item fade-in';
+    d.innerHTML = `
+      <div class="file-icon-box">${fileIcon(f.name)}</div>
+      <div class="file-info">
+        <div class="file-name">${esc(f.name)} ${f.zipped?'<span style="color:var(--accent2);font-size:10px">ZIP</span>':''}</div>
+        <div class="file-meta">${f.size} · ${f.date}</div>
+      </div>
+      <button class="file-del" onclick="delFile(${i},event)">✕</button>`;
+    d.onclick = () => downloadFile(f);
+    c.appendChild(d);
+  });
+}
+function addFile() { document.getElementById('file-input').click(); }
+async function handleFiles(e) {
+  const files = Array.from(e.target.files);
+  for (const f of files) {
+    const data = await readFileAsB64(f);
+    // ZIP it
+    try {
+      const zip = new JSZip();
+      zip.file(f.name, data, {base64:true});
+      const zipped = await zip.generateAsync({type:'base64', compression:'DEFLATE', compressionOptions:{level:6}});
+      state.files.push({ name: f.name, data: zipped, size: fmtSize(f.size), date: now(), zipped: true, type: f.type });
+    } catch {
+      state.files.push({ name: f.name, data: data, size: fmtSize(f.size), date: now(), zipped: false, type: f.type });
+    }
+  }
+  saveState(); renderTab('files'); toast(`✓ ${files.length} fichier(s) ajouté(s)`);
+  e.target.value = '';
+}
+async function downloadFile(f) {
+  let data = f.data;
+  let name = f.name;
+  if (f.zipped) {
+    try {
+      const zip = await JSZip.loadAsync(data, {base64:true});
+      const file = zip.file(f.name);
+      if (file) {
+        data = await file.async('base64');
+      }
+    } catch {}
+  }
+  const link = document.createElement('a');
+  link.href = `data:${f.type||'application/octet-stream'};base64,${data}`;
+  link.download = name;
+  link.click();
+}
+function delFile(i, e) {
+  e.stopPropagation();
+  state.files.splice(i,1);
+  saveState(); renderTab('files');
+}
+
+// ══════════════════════════════════════════════
+// FOLDERS
+// ══════════════════════════════════════════════
+function renderFolders(c) {
+  c.innerHTML = `
+    <div class="section-header fade-in">
+      <div class="section-title">DOSSIERS CACHÉS</div>
+      <button class="add-btn" onclick="openModal('folder-modal')">+ DOSSIER</button>
+    </div>`;
+  if (!state.folders.length) {
+    c.innerHTML += `<div class="empty-state"><div class="empty-icon">🗂️</div>Aucun dossier</div>`;
+    return;
+  }
+  state.folders.forEach((folder, i) => {
+    const d = document.createElement('div');
+    d.className = 'folder-card fade-in';
+    const locked = !!folder.pin;
+    d.innerHTML = `
+      <div class="folder-icon">${locked?'🔒':'📂'}</div>
+      <div class="folder-info">
+        <div class="folder-name">${esc(folder.name)} ${locked?'<span style="color:var(--accent3);font-size:10px">CODE REQUIS</span>':''}</div>
+        <div class="folder-count">${(folder.items||[]).length} élément(s) · ${folder.date}</div>
+      </div>
+      <button class="folder-del" onclick="delFolder(${i},event)">✕</button>`;
+    d.onclick = () => openFolder(i);
+    c.appendChild(d);
+  });
+}
+function saveFolder() {
+  const name = document.getElementById('folder-name-input').value.trim();
+  const pin = document.getElementById('folder-pin-input').value.trim();
+  if (!name) return;
+  if (pin && pin.length !== 4) { toast('Code doit être 4 chiffres', true); return; }
+  state.folders.push({ name, pin: pin||null, items:[], date: now() });
+  saveState(); closeModal('folder-modal');
+  document.getElementById('folder-name-input').value = '';
+  document.getElementById('folder-pin-input').value = '';
+  renderTab('folders'); toast('✓ Dossier créé');
+}
+function openFolder(i) {
+  const folder = state.folders[i];
+  if (folder.pin) {
+    folderUnlockTarget = i;
+    folderUnlockCurrent = '';
+    updateFolderUnlockDots();
+    document.getElementById('folder-unlock-err').textContent = '';
+    openModal('folder-unlock-modal');
+    folderUnlockCallback = () => showFolderContent(i);
+  } else {
+    showFolderContent(i);
+  }
+}
+function showFolderContent(i) {
+  const folder = state.folders[i];
+  const c = document.getElementById('app-content');
+  c.innerHTML = `
+    <div class="section-header fade-in">
+      <div class="section-title">📂 ${esc(folder.name)}</div>
+      <div style="display:flex;gap:8px">
+        <button class="add-btn" onclick="addFolderFile(${i})">+ FICHIER</button>
+        <button class="add-btn" style="border-color:var(--text-dim);color:var(--text-dim)" onclick="renderTab('folders')">← RETOUR</button>
+      </div>
+    </div>
+    <input type="file" id="folder-file-input" multiple style="display:none" onchange="handleFolderFiles(event,${i})">`;
+  if (!(folder.items||[]).length) {
+    c.innerHTML += `<div class="empty-state"><div class="empty-icon">📄</div>Dossier vide</div>`;
+    return;
+  }
+  folder.items.forEach((f, j) => {
+    const d = document.createElement('div');
+    d.className = 'file-item fade-in';
+    d.innerHTML = `
+      <div class="file-icon-box">${fileIcon(f.name)}</div>
+      <div class="file-info">
+        <div class="file-name">${esc(f.name)}</div>
+        <div class="file-meta">${f.size} · ${f.date}</div>
+      </div>
+      <button class="file-del" onclick="delFolderFile(${i},${j},event)">✕</button>`;
+    d.onclick = () => downloadFile(f);
+    c.appendChild(d);
+  });
+}
+function addFolderFile(i) {
+  const inp = document.getElementById('folder-file-input');
+  inp.onchange = (e) => handleFolderFiles(e, i);
+  inp.click();
+}
+async function handleFolderFiles(e, i) {
+  const files = Array.from(e.target.files);
+  for (const f of files) {
+    const data = await readFileAsB64(f);
+    state.folders[i].items = state.folders[i].items || [];
+    state.folders[i].items.push({ name: f.name, data, size: fmtSize(f.size), date: now(), type: f.type });
+  }
+  saveState(); showFolderContent(i); toast(`✓ ${files.length} fichier(s) ajouté(s)`);
+  e.target.value = '';
+}
+function delFolderFile(fi, ji, e) {
+  e.stopPropagation();
+  state.folders[fi].items.splice(ji,1);
+  saveState(); showFolderContent(fi);
+}
+function delFolder(i, e) {
+  e.stopPropagation();
+  state.folders.splice(i,1);
+  saveState(); renderTab('folders');
+}
+
+// Folder unlock numpad
+function folderUnlockPin(d) {
+  if (folderUnlockCurrent.length >= 4) return;
+  folderUnlockCurrent += d;
+  updateFolderUnlockDots();
+  if (folderUnlockCurrent.length === 4) {
+    setTimeout(() => {
+      const folder = state.folders[folderUnlockTarget];
+      if (folderUnlockCurrent === folder.pin) {
+        closeModal('folder-unlock-modal');
+        folderUnlockCurrent = '';
+        if (folderUnlockCallback) folderUnlockCallback();
+      } else {
+        document.getElementById('folder-unlock-err').textContent = 'Code incorrect';
+        folderUnlockCurrent = '';
+        updateFolderUnlockDots();
+        const dots = document.querySelectorAll('#folder-unlock-dots .secret-pin-dot');
+        dots.forEach(d => { d.style.background='var(--accent3)'; d.style.borderColor='var(--accent3)'; });
+        setTimeout(() => { dots.forEach(d => { d.style.background=''; d.style.borderColor=''; }); }, 400);
+      }
+    }, 150);
+  }
+}
+function folderUnlockDel() {
+  folderUnlockCurrent = folderUnlockCurrent.slice(0,-1);
+  updateFolderUnlockDots();
+}
+function updateFolderUnlockDots() {
+  const dots = document.querySelectorAll('#folder-unlock-dots .secret-pin-dot');
+  dots.forEach((d,i) => d.classList.toggle('filled', i < folderUnlockCurrent.length));
+}
+
+// ══════════════════════════════════════════════
+// JOURNAL
+// ══════════════════════════════════════════════
+function renderJournal(c) {
+  c.innerHTML = `
+    <div class="section-header fade-in">
+      <div class="section-title">JOURNAL CHIFFRÉ</div>
+      <button class="add-btn" onclick="openModal('journal-modal')">+ ENTRÉE</button>
+    </div>`;
+  if (!state.journal.length) {
+    c.innerHTML += `<div class="empty-state"><div class="empty-icon">📖</div>Aucune entrée</div>`;
+    return;
+  }
+  state.journal.forEach((j, i) => {
+    const d = document.createElement('div');
+    d.className = 'journal-entry fade-in';
+    d.innerHTML = `
+      <button class="journal-del" onclick="delJournal(${i},event)">✕</button>
+      <div class="journal-date">${j.date}</div>
+      <div class="journal-text">${esc(j.text)}</div>`;
+    c.appendChild(d);
+  });
+}
+function saveJournal() {
+  const text = document.getElementById('journal-input').value.trim();
+  if (!text) return;
+  const now2 = new Date();
+  state.journal.unshift({ text, date: now2.toLocaleString('fr-FR') });
+  saveState(); closeModal('journal-modal');
+  document.getElementById('journal-input').value = '';
+  renderTab('journal'); toast('✓ Entrée ajoutée');
+}
+function delJournal(i, e) {
+  e.stopPropagation();
+  state.journal.splice(i,1);
+  saveState(); renderTab('journal');
+}
+
+// ══════════════════════════════════════════════
+// SETTINGS
+// ══════════════════════════════════════════════
+function renderSettings(c) {
+  c.innerHTML = `
+    <div class="section-header fade-in">
+      <div class="section-title">CONFIGURATION</div>
+    </div>
+    <div class="settings-item fade-in" onclick="openModal('export-modal')">
+      <div><div class="settings-label">💾 Export / Import</div><div class="settings-desc">Sauvegarder ou restaurer vos données</div></div>
+      <div class="settings-arrow">›</div>
+    </div>
+    <div class="settings-item fade-in" onclick="changeLockTimeout()">
+      <div><div class="settings-label">⏱ Verrouillage auto</div><div class="settings-desc">Actuellement : ${state.lockTimeout} minutes</div></div>
+      <div class="settings-arrow">›</div>
+    </div>
+    <div class="settings-item fade-in" onclick="changeFakePin()">
+      <div><div class="settings-label">🎭 Changer faux PIN</div><div class="settings-desc">PIN qui ouvre le mode calculatrice</div></div>
+      <div class="settings-arrow">›</div>
+    </div>
+    <div class="settings-item fade-in" onclick="shareApp()">
+      <div><div class="settings-label">📤 Partager VaultOS</div><div class="settings-desc">Partager l'app vierge à quelqu'un</div></div>
+      <div class="settings-arrow">›</div>
+    </div>
+    <div class="settings-item fade-in" onclick="lockNow()">
+      <div><div class="settings-label">🔒 Verrouiller maintenant</div><div class="settings-desc">Retour à l'écran de verrouillage</div></div>
+      <div class="settings-arrow">›</div>
+    </div>
+    <div style="margin-top:20px">
+      <div style="text-align:center;font-family:var(--mono);font-size:10px;color:var(--text-dim)">
+        VAULTOS v1.0 // LOCAL ONLY // NO SERVER
+      </div>
+    </div>`;
+}
+
+function changeLockTimeout() {
+  const val = prompt('Verrouillage auto après X minutes (1-60):');
+  const n = parseInt(val);
+  if (n >= 1 && n <= 60) {
+    state.lockTimeout = n;
+    saveState();
+    renderTab('settings');
+    toast('✓ Délai mis à jour');
+    startLockTimer();
+  }
+}
+
+function changeFakePin() {
+  const val = prompt('Nouveau faux PIN (4 chiffres) :');
+  if (val && /^\d{4}$/.test(val) && val !== state.pin) {
+    state.fakePin = val;
+    saveState();
+    toast('✓ Faux PIN mis à jour');
+  } else {
+    toast('PIN invalide ou identique au vrai PIN', true);
+  }
+}
+
+function shareApp() {
+  toast('Sauvegardez la page HTML pour la partager');
+}
+
+function lockNow() {
+  lockCurrent = '';
+  updateLockDots();
+  showScreen('lock-screen');
+}
+
+// ══════════════════════════════════════════════
+// EXPORT / IMPORT
+// ══════════════════════════════════════════════
+function exportData() {
+  const key = state.pin + '_vault_export_2025';
+  const encrypted = xorCipher(JSON.stringify(state), key);
+  const blob = new Blob([encrypted], {type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'vaultos_backup.vaultbak'; a.click();
+  URL.revokeObjectURL(url);
+  toast('✓ Export créé');
+}
+
+function triggerImport() { document.getElementById('import-file').click(); }
+
+function importData(e) {
+  const f = e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const pin = prompt('Entrez le PIN de la sauvegarde :');
+    if (!pin) return;
+    const key = pin + '_vault_export_2025';
+    const decrypted = xorDecipher(ev.target.result, key);
+    if (!decrypted) { toast('Impossible de déchiffrer — PIN incorrect ?', true); return; }
+    try {
+      const loaded = JSON.parse(decrypted);
+      state = loaded;
+      saveState();
+      closeModal('export-modal');
+      renderTab(currentTab);
+      toast('✓ Données importées');
+    } catch { toast('Fichier invalide', true); }
+  };
+  reader.readAsText(f);
+  e.target.value = '';
+}
+
+// ══════════════════════════════════════════════
+// CALCULATOR (PANIC)
+// ══════════════════════════════════════════════
+let calcVal = '0';
+let calcExpr = '';
+let calcOp = null;
+let calcPrev = null;
+let calcNew = false;
+let calcSecret = '';
+
+function triggerPanic() {
+  calcVal = '0'; calcExpr = ''; calcOp = null; calcPrev = null; calcNew = false; calcSecret = '';
+  document.getElementById('calc-val').textContent = '0';
+  document.getElementById('calc-expr').textContent = '';
+  document.getElementById('calc-screen').classList.add('active');
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+}
+
+function calcInput(v) {
+  const dispVal = document.getElementById('calc-val');
+  const dispExpr = document.getElementById('calc-expr');
+
+  if (v === 'AC') {
+    calcVal = '0'; calcExpr = ''; calcOp = null; calcPrev = null; calcNew = false; calcSecret = '';
+    dispVal.textContent = '0'; dispExpr.textContent = '';
+    return;
+  }
+  if (v === '+/-') { calcVal = String(-parseFloat(calcVal)||0); dispVal.textContent = calcVal; return; }
+  if (v === '%') { calcVal = String(parseFloat(calcVal)/100); dispVal.textContent = calcVal; return; }
+
+  if (['+','-','*','/'].includes(v)) {
+    calcPrev = parseFloat(calcVal);
+    calcOp = v;
+    calcNew = true;
+    calcExpr = calcVal + ' ' + ({'+':'+','-':'−','*':'×','/':'÷'}[v]) + ' ';
+    dispExpr.textContent = calcExpr;
+    return;
+  }
+
+  if (v === '=') {
+    // Check secret code: if expr contains the secret return code
+    const full = calcExpr + calcVal;
+    // Secret: entering the vault PIN followed by = returns to vault
+    if (calcSecret.length > 0) {
+      if (calcSecret === state.pin) {
+        document.getElementById('calc-screen').classList.remove('active');
+        showApp(); calcSecret = '';
+        return;
+      }
+    }
+    if (calcPrev !== null && calcOp) {
+      const cur = parseFloat(calcVal);
+      let res;
+      if (calcOp==='+') res=calcPrev+cur;
+      else if (calcOp==='-') res=calcPrev-cur;
+      else if (calcOp==='*') res=calcPrev*cur;
+      else if (calcOp==='/') res=cur===0?'Erreur':calcPrev/cur;
+      calcVal = String(Math.round(res*1e10)/1e10);
+      dispVal.textContent = calcVal;
+      dispExpr.textContent = '';
+      calcOp = null; calcPrev = null; calcNew = false; calcExpr = '';
+    }
+    return;
+  }
+
+  if (v === '.') {
+    if (calcNew) { calcVal = '0.'; calcNew = false; }
+    else if (!calcVal.includes('.')) calcVal += '.';
+    dispVal.textContent = calcVal;
+    return;
+  }
+
+  // Digit
+  if (calcNew) { calcVal = v; calcNew = false; }
+  else { calcVal = calcVal === '0' ? v : calcVal + v; }
+  calcSecret += v; // build secret code attempt
+  if (calcSecret.length > 4) calcSecret = calcSecret.slice(-4);
+  dispVal.textContent = calcVal;
+}
+
+// ══════════════════════════════════════════════
+// MODALS
+// ══════════════════════════════════════════════
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+// Close on overlay click
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); });
+});
+
+// ══════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════
+function toast(msg, err=false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (err?' error':'');
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function now() { return new Date().toLocaleDateString('fr-FR'); }
+function fmtSize(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+function fileIcon(name) {
+  const ext = (name||'').split('.').pop().toLowerCase();
+  const icons = {pdf:'📄',doc:'📝',docx:'📝',xls:'📊',xlsx:'📊',ppt:'📊',pptx:'📊',txt:'📄',zip:'🗜️',rar:'🗜️',mp3:'🎵',wav:'🎵',mp4:'🎬',mov:'🎬',jpg:'🖼️',jpeg:'🖼️',png:'🖼️',gif:'🖼️',svg:'🖼️'};
+  return icons[ext] || '📄';
+}
+function readFileAsB64(file) {
+  return new Promise((res,rej) => {
+    const r = new FileReader();
+    r.onload = e => res(e.target.result.split(',')[1]);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+</script>
+</body>
+</html>
